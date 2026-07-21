@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Ovocito</title>
+
+<style>
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+}
+
+body{
+
+background:#111;
+
+display:flex;
+justify-content:center;
+align-items:center;
+
+height:100vh;
+
+overflow:hidden;
+
+font-family:Arial;
+
+}
+
+canvas{
+
+width:min(100vw,56.25vh);
+height:min(177.78vw,100vh);
+
+background:black;
+
+border-radius:18px;
+
+box-shadow:0 0 30px rgba(0,0,0,.5);
+
+}
+
+video{
+display:none;
+}
+
+button{
+position:fixed;
+bottom:25px;
+padding:15px 30px;
+font-size:18px;
+border:none;
+border-radius:12px;
+cursor:pointer;
+background:#2a7fff;
+color:white;
+}
+
+#record{
+right:30px;
+}
+
+#stop{
+right:30px;
+background:#d33;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline muted></video>
+
+<canvas id="canvas" width="1080" height="1920"></canvas>
+
+<button id="start">
+Iniciar cámara
+</button>
+
+<button id="record" style="display:none;">
+🔴 Grabar
+</button>
+
+<button id="stop" style="display:none;">
+⏹ Stop
+</button>
+
+<script type="module">
+
+import { FaceLandmarker, FilesetResolver }
+from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+
+const canvas=document.getElementById("canvas");
+
+const ctx=canvas.getContext("2d");
+
+const video=document.getElementById("video");
+
+const start=document.getElementById("start");
+const record=document.getElementById("record");
+const stop=document.getElementById("stop");
+
+let recorder;
+let chunks=[];
+
+let faceLandmarker;
+
+function obtenerCaja(puntos, indices){
+
+let xs=[];
+let ys=[];
+
+indices.forEach(i=>{
+
+xs.push(puntos[i].x);
+ys.push(puntos[i].y);
+
+});
+
+
+let minX=Math.min(...xs);
+let maxX=Math.max(...xs);
+
+let minY=Math.min(...ys);
+let maxY=Math.max(...ys);
+
+
+return {
+
+x:minX,
+y:minY,
+
+ancho:maxX-minX,
+alto:maxY-minY
+
+};
+
+}
+
+const indicesOjoIzquierdo=[
+33,133,160,159,158,157,173,144,145,153
+];
+
+
+const indicesOjoDerecho=[
+362,263,387,386,385,384,398,373,374,380
+];
+
+
+const indicesBoca=[
+61,291,13,14,78,308
+];
+
+async function iniciarFaceMesh(){
+
+const vision = await FilesetResolver.forVisionTasks(
+"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+);
+
+
+faceLandmarker = await FaceLandmarker.createFromOptions(
+vision,
+{
+
+baseOptions:{
+modelAssetPath:
+"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+},
+
+runningMode:"VIDEO",
+
+numFaces:1
+
+});
+
+console.log("MediaPipe listo");
+
+}
+
+const fondo=new Image();
+
+fondo.src="ovulo.png";
+
+start.onclick=async()=>{
+
+const stream=await navigator.mediaDevices.getUserMedia({
+
+video:{
+facingMode:"user"
+}
+
+});
+
+video.srcObject=stream;
+
+await video.play();
+
+await iniciarFaceMesh();
+
+start.style.display="none";
+
+record.style.display="block";
+
+dibujar();
+
+}
+
+function limitar(valor, minimo, maximo){
+
+return Math.max(
+minimo,
+Math.min(valor,maximo)
+);
+
+}
+
+
+function dibujarRasgo(caja, escala, baseX, baseY, baseW, baseH){
+
+const w = Math.max(
+20,
+Math.min(caja.ancho * escala, baseW*1.8)
+);
+
+const h = Math.max(
+10,
+Math.min(caja.alto * escala, baseH*1.8)
+);
+
+
+const x = baseX + (baseW-w)/2;
+const y = baseY + (baseH-h)/2;
+
+
+ctx.save();
+
+
+ctx.beginPath();
+
+ctx.ellipse(
+x+w/2,
+y+h/2,
+w/2,
+h/2,
+0,
+0,
+Math.PI*2
+);
+
+
+ctx.clip();
+
+
+ctx.drawImage(
+
+video,
+
+(caja.x-caja.ancho*0.25)*video.videoWidth,
+(caja.y-caja.alto*0.25)*video.videoHeight,
+
+caja.ancho*1.5*video.videoWidth,
+caja.alto*1.5*video.videoHeight,
+
+
+x,
+y,
+w,
+h
+
+);
+
+
+ctx.restore();
+
+}
+
+record.onclick=async()=>{
+
+
+const streamCanvas = canvas.captureStream(30);
+
+
+// pedir micrófono
+let audioStream;
+
+try {
+
+audioStream = await navigator.mediaDevices.getUserMedia({
+    audio:true
+});
+
+} catch(e){
+
+alert("Necesitamos permiso del micrófono");
+
+return;
+
+}
+
+
+// combinar video del canvas + audio del micrófono
+const streamFinal = new MediaStream([
+    ...streamCanvas.getVideoTracks(),
+    ...audioStream.getAudioTracks()
+]);
+
+
+chunks=[];
+
+
+let opciones;
+
+
+if(MediaRecorder.isTypeSupported("video/mp4")){
+
+    opciones = {
+        mimeType:"video/mp4"
+    };
+
+
+}else if(MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")){
+
+    opciones = {
+        mimeType:"video/webm;codecs=vp8,opus"
+    };
+
+
+}else{
+
+    opciones = {};
+
+}
+
+
+recorder = new MediaRecorder(
+    streamFinal,
+    opciones
+);
+
+
+recorder.ondataavailable = e=>{
+
+if(e.data.size>0){
+chunks.push(e.data);
+}
+
+};
+
+
+recorder.onstop=()=>{
+
+
+const videoBlob =
+new Blob(
+chunks,
+{
+type: opciones.mimeType
+}
+);
+
+
+const url =
+URL.createObjectURL(videoBlob);
+
+
+const a=document.createElement("a");
+
+a.href=url;
+
+let extension = "webm";
+
+if(opciones.mimeType === "video/mp4"){
+    extension = "mp4";
+}
+
+const ahora = new Date();
+
+const fecha =
+ahora.getFullYear() + "-" +
+String(ahora.getMonth()+1).padStart(2,"0") + "-" +
+String(ahora.getDate()).padStart(2,"0");
+
+
+const hora =
+String(ahora.getHours()).padStart(2,"0") + "-" +
+String(ahora.getMinutes()).padStart(2,"0") + "-" +
+String(ahora.getSeconds()).padStart(2,"0");
+
+
+a.download =
+"ovocito_" + fecha + "_" + hora + "." + extension;
+
+a.click();
+
+
+URL.revokeObjectURL(url);
+
+
+};
+
+
+recorder.start();
+
+
+record.style.display="none";
+
+stop.style.display="block";
+
+
+};
+
+
+
+stop.onclick=()=>{
+
+
+if(recorder){
+
+recorder.stop();
+
+}
+
+
+stop.style.display="none";
+
+record.style.display="block";
+
+
+};
+
+function dibujar(){
+
+ctx.clearRect(0,0,1080,1920);
+
+ctx.drawImage(
+
+fondo,
+
+0,
+
+0,
+
+1080,
+
+1920
+
+);
+
+
+// 👇 MediaPipe analiza la cámara acá
+
+if(faceLandmarker){
+
+const resultado =
+faceLandmarker.detectForVideo(
+video,
+performance.now()
+);
+
+
+if(resultado.faceLandmarks.length > 0){
+
+const puntos = resultado.faceLandmarks[0];
+
+
+// punto del ojo izquierdo (aprox)
+const cajaOjoIzq =
+obtenerCaja(puntos,indicesOjoIzquierdo);
+
+
+const cajaOjoDer =
+obtenerCaja(puntos,indicesOjoDerecho);
+
+
+const cajaBoca =
+obtenerCaja(puntos,indicesBoca);
+
+const centroCaraX =
+(cajaOjoIzq.x + cajaOjoDer.x)/2;
+
+
+const centroCaraY =
+(cajaOjoIzq.y + cajaBoca.y)/2;
+
+const moverX = (centroCaraX - 0.5) * 80;
+
+const moverY = (centroCaraY - 0.5) * 80;
+
+
+console.log({
+ojoIzq:cajaOjoIzq,
+ojoDer:cajaOjoDer,
+boca:cajaBoca
+});
+
+
+// ojo izquierdo
+
+dibujarRasgo(
+cajaOjoIzq,
+2500,
+450 + moverX,
+820 + moverY,
+100,
+55
+);
+
+
+// ojo derecho
+
+dibujarRasgo(
+cajaOjoDer,
+2500,
+620 + moverX,
+820 + moverY,
+100,
+55
+);
+
+
+// boca
+
+dibujarRasgo(
+cajaBoca,
+1800,
+530 + moverX,
+1030 + moverY,
+130,
+70
+);
+}
+
+
+
+
+}
+
+
+requestAnimationFrame(dibujar);
+
+}
+</script>
+
+</body>
+
+</html>
