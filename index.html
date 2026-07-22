@@ -332,7 +332,15 @@ soundTouchNode.connect(destination);
 audioProcesado =
 destination.stream;
 
+} catch(e){
 
+console.error(e);
+
+alert("Necesitamos permiso del micrófono");
+
+return;
+
+}
 
 // combinar video del canvas + audio del micrófono
 const streamFinal = new MediaStream([
