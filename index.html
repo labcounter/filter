@@ -94,9 +94,13 @@ Iniciar cámara
 
 <script type="module">
 
+
+
 import { FaceLandmarker, FilesetResolver }
 from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
+import { SoundTouchNode } 
+from "./SoundTouchNode.js";
 
 const canvas=document.getElementById("canvas");
 
@@ -305,116 +309,29 @@ const audioContext = new AudioContext();
 const source =
 audioContext.createMediaStreamSource(audioStream);
 
-
-// Creamos el procesador dentro del mismo HTML
-const codigoProcesador = `
-
-class ArdillaProcessor extends AudioWorkletProcessor {
-
-process(inputs, outputs){
-
-const input = inputs[0];
-const output = outputs[0];
-
-
-if(input.length){
-
-for(let canal=0; canal<input.length; canal++){
-
-const entrada=input[canal];
-const salida=output[canal];
-
-const factor = 1.4; // intensidad ardilla
-
-
-for(let i=0;i<salida.length;i++){
-
-    let indice = Math.floor(i * factor);
-
-
-    if(indice < entrada.length){
-
-        salida[i] = entrada[indice];
-
-    }else{
-
-        salida[i] = 0;
-
-    }
-
-}
-
-}
-
-}
-
-return true;
-
-}
-
-}
-
-
-registerProcessor(
-"ardilla",
-ArdillaProcessor
-);
-
-`;
-
-
-
-const blob =
-new Blob(
-[codigoProcesador],
-{
-type:"application/javascript"
-}
+const soundTouchNode =
+new SoundTouchNode(
+    audioContext
 );
 
 
-const urlProcesador =
-URL.createObjectURL(blob);
-
-
-
-await audioContext.audioWorklet.addModule(
-urlProcesador
-);
-
-
-
-const ardillaNode =
-new AudioWorkletNode(
-audioContext,
-"ardilla"
-);
-
+// intensidad ardillita
+soundTouchNode.pitch = 8;
 
 
 const destination =
 audioContext.createMediaStreamDestination();
 
 
+source.connect(soundTouchNode);
 
-source.connect(ardillaNode);
 
-
-ardillaNode.connect(destination);
-
+soundTouchNode.connect(destination);
 
 
 audioProcesado =
 destination.stream;
 
-
-} catch(e){
-
-alert("Necesitamos permiso del micrófono");
-
-return;
-
-}
 
 
 // combinar video del canvas + audio del micrófono
