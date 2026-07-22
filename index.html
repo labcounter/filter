@@ -305,18 +305,17 @@ audioStream = await navigator.mediaDevices.getUserMedia({
 
 const audioContext = new AudioContext();
 
+await audioContext.resume();
+
 
 const source =
 audioContext.createMediaStreamSource(audioStream);
+
 
 const soundTouchNode =
 new SoundTouchNode(
     audioContext
 );
-
-
-// intensidad ardillita
-soundTouchNode.pitch = 8;
 
 
 const destination =
